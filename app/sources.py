@@ -52,18 +52,4 @@ SOURCES = [
         url="https://www.eventbrite.com/ttd/dc--washington--trinidad/",
         geographic_hint=True,
     ),
-    Source(
-        name="Eventbrite DC Sports",
-        category="sports",
-        kind="html_context",
-        url="https://www.eventbrite.com/d/dc--washington/sports-and-fitness--events/",
-        geographic_hint=True,
-    ),
-    Source(
-        name="Ticketmaster DC Sports",
-        category="sports",
-        kind="html_context",
-        url="https://www.ticketmaster.com/discover/sports/washington",
-        geographic_hint=True,
-    ),
 ]

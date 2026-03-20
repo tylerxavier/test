@@ -15,7 +15,7 @@ def page_template(body: str, title: str = "Trinidad News + Events Scanner") -> b
     <title>{escape(title)}</title>
     <style>
       body {{ font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }}
-      .wrap {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+      .wrap {{ max-width: 1100px; margin: 0 auto; padding: 2rem; }}
       .hero, .card {{ background: white; border-radius: 16px; padding: 1.25rem 1.5rem; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); margin-bottom: 1rem; }}
       .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }}
       button {{ background: #0f766e; color: white; border: 0; border-radius: 999px; padding: 0.8rem 1.2rem; font-weight: bold; cursor: pointer; }}
@@ -34,16 +34,15 @@ def render_index(result=None, markdown_output: str | None = None) -> bytes:
     body = [
         "<section class='hero'>",
         "<h1>Trinidad Neighborhood News + Events</h1>",
-        "<p>Scan key official, local news, community event, and sports ticket sites for Trinidad in Northeast DC, adjacent neighborhoods, and sports events across Washington DC within roughly a 20-mile radius.</p>",
+        "<p>Scan key official, local news, and community event sites for Trinidad in Northeast DC and immediately adjacent neighborhoods.</p>",
         "<form method='post' action='/scan'><button type='submit'>Scan key sites now</button></form>",
-        "<p class='meta'>News window: last 7 days. Event window: next 14 days. Sports window: next 30 days. Sports listings also try to capture the lowest listed ticket price.</p>",
+        "<p class='meta'>News window: last 7 days. Event window: next 14 days. Coverage includes Trinidad, Carver/Langston, Ivy City, Near Northeast, H Street, Union Market, NoMa, and Eckington.</p>",
         "</section>",
     ]
     if result:
         body.append("<div class='grid'>")
         body.append(render_items_card("News", result.news, "No recent news items matched the current Trinidad-area filters."))
         body.append(render_items_card("Events", result.events, "No upcoming events matched the current Trinidad-area filters."))
-        body.append(render_items_card("Sports events", result.sports, "No upcoming sports events matched the current DC-area filters."))
         body.append("</div>")
         body.append(f"<section class='card'><h2>Markdown output</h2><pre>{escape(markdown_output or '')}</pre></section>")
         if result.errors:
@@ -59,7 +58,7 @@ def render_items_card(title: str, items: list, empty_message: str) -> str:
         return "".join(html)
     for item in items:
         pills = "".join(f"<span class='pill'>{escape(term)}</span>" for term in (item.matched_terms or [])[:5])
-        meta = " · ".join(part for part in [item.source, item.published_at, item.location, item.price_text] if part)
+        meta = " · ".join(part for part in [item.source, item.published_at, item.location] if part)
         html.append(
             f"<article><h3><a href='{escape(item.url)}' target='_blank' rel='noreferrer'>{escape(item.title)}</a></h3>"
             f"<p class='meta'>{escape(meta)}</p><p>{escape(item.summary)}</p><p>{pills}</p></article><hr>"

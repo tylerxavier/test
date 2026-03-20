@@ -1,6 +1,6 @@
 # Trinidad Neighborhood News + Events Scanner
 
-A small Python web app that scans curated official, local news, community event, and sports ticket pages to surface items relevant to the Trinidad neighborhood in Northeast DC, nearby neighborhoods, and sports events across Washington DC and roughly a 20-mile radius.
+A small Python web app that scans a curated set of official, local news, and community event pages to surface items relevant to the Trinidad neighborhood in Northeast DC and immediately adjacent neighborhoods.
 
 ## What it does
 
@@ -9,7 +9,6 @@ A small Python web app that scans curated official, local news, community event,
 - Splits results into:
   - local news from the last 7 days
   - local events in the next 14 days
-  - upcoming sports events in the next 30 days with the lowest listed ticket price when available
 - Exposes both:
   - an HTML dashboard at `/`
   - JSON output at `/api/scan`
@@ -25,9 +24,6 @@ A small Python web app that scans curated official, local news, community event,
   - DC Public Library events page
   - Eventbrite Trinidad community page
   - Eventbrite Trinidad things-to-do page
-- Sports ticket/event sources
-  - Eventbrite DC sports page
-  - Ticketmaster Washington sports page
 
 The source list is intentionally easy to edit in `app/sources.py`.
 
@@ -50,7 +46,7 @@ Then open <http://127.0.0.1:8000>.
 
 - `GET /` – dashboard
 - `POST /scan` – trigger a scan from the form
-- `GET /api/scan` – returns JSON with `news`, `events`, `sports`, and `errors`
+- `GET /api/scan` – returns JSON with `news`, `events`, and `errors`
 - `GET /api/scan?format=markdown` – returns a Markdown summary
 
 ## Testing

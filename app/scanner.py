@@ -12,10 +12,10 @@ from typing import Iterable
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from .config import EVENT_DAYS, KEYWORDS, NEWS_DAYS, SPORTS_DAYS, SPORTS_KEYWORDS
+from .config import EVENT_DAYS, KEYWORDS, NEWS_DAYS
 from .sources import SOURCES, Source
 
-USER_AGENT = "trinidad-neighborhood-scanner/0.2 (+https://localhost)"
+USER_AGENT = "trinidad-neighborhood-scanner/0.1 (+https://localhost)"
 MAX_HTML_ITEMS = 12
 TIMEOUT_SECONDS = 15
 
@@ -30,7 +30,6 @@ class Item:
     published_at: str | None = None
     location: str | None = None
     matched_terms: list[str] | None = None
-    price_text: str | None = None
 
 
 @dataclass
@@ -38,7 +37,6 @@ class ScanResult:
     generated_at: str
     news: list[Item]
     events: list[Item]
-    sports: list[Item]
     errors: list[str]
 
 
@@ -79,28 +77,26 @@ def fetch_text(url: str) -> str:
 
 
 def scan_sources() -> ScanResult:
-    grouped = {"news": [], "events": [], "sports": []}
+    news_items: list[Item] = []
+    event_items: list[Item] = []
     errors: list[str] = []
 
     for source in SOURCES:
         try:
             body = fetch_text(source.url)
-            if source.kind == "rss":
-                items = parse_rss(source, body)
-            elif source.kind == "html_context":
-                items = parse_html_context(source, body)
-            else:
-                items = parse_html(source, body)
+            items = parse_rss(source, body) if source.kind == "rss" else parse_html(source, body)
             filtered = filter_items(items, source)
-            grouped[source.category].extend(filtered)
+            if source.category == "news":
+                news_items.extend(filtered)
+            else:
+                event_items.extend(filtered)
         except Exception as exc:
             errors.append(f"{source.name}: {exc}")
 
     return ScanResult(
         generated_at=datetime.now(timezone.utc).isoformat(),
-        news=dedupe_and_sort(grouped["news"]),
-        events=dedupe_and_sort(grouped["events"]),
-        sports=dedupe_and_sort(grouped["sports"]),
+        news=dedupe_and_sort(news_items),
+        events=dedupe_and_sort(event_items),
         errors=errors,
     )
 
@@ -132,7 +128,9 @@ def parse_html(source: Source, body: str) -> list[Item]:
     page_location = extract_location(text_blob)
 
     for title, href in parser.items:
-        if len(title) < 8 or href in seen or href.startswith(("javascript:", "mailto:")):
+        if len(title) < 8 or href in seen:
+            continue
+        if href.startswith("javascript:") or href.startswith("mailto:"):
             continue
         items.append(
             Item(
@@ -151,45 +149,15 @@ def parse_html(source: Source, body: str) -> list[Item]:
     return items
 
 
-def parse_html_context(source: Source, body: str) -> list[Item]:
-    parser = AnchorExtractor(source.url)
-    parser.feed(body)
-    items: list[Item] = []
-    seen: set[str] = set()
-
-    for title, href in parser.items:
-        if len(title) < 8 or href in seen or href.startswith(("javascript:", "mailto:")):
-            continue
-        context = extract_context(body, title, href)
-        items.append(
-            Item(
-                title=title,
-                url=href,
-                source=source.name,
-                category=source.category,
-                summary=clean_space(strip_tags(context))[:400],
-                published_at=extract_date(context),
-                location=extract_location(context),
-                price_text=extract_price(context),
-            )
-        )
-        seen.add(href)
-        if len(items) >= MAX_HTML_ITEMS:
-            break
-    return items
-
-
 def filter_items(items: Iterable[Item], source: Source) -> list[Item]:
     now = datetime.now(timezone.utc)
     news_cutoff = now - timedelta(days=NEWS_DAYS)
     event_cutoff = now + timedelta(days=EVENT_DAYS)
-    sports_cutoff = now + timedelta(days=SPORTS_DAYS)
     filtered: list[Item] = []
 
     for item in items:
         haystack = f"{item.title} {item.summary} {item.location or ''} {item.url}".lower()
-        keywords = SPORTS_KEYWORDS if item.category == "sports" else KEYWORDS
-        matched_terms = [term for term in keywords if term in haystack]
+        matched_terms = [term for term in KEYWORDS if term in haystack]
         if not matched_terms and not source.geographic_hint:
             continue
         item.matched_terms = matched_terms
@@ -199,11 +167,6 @@ def filter_items(items: Iterable[Item], source: Source) -> list[Item]:
             continue
         if item.category == "events" and dt and (dt < now - timedelta(days=1) or dt > event_cutoff):
             continue
-        if item.category == "sports":
-            if dt and (dt < now - timedelta(days=1) or dt > sports_cutoff):
-                continue
-            if not item.price_text:
-                item.price_text = "Price not listed"
         filtered.append(item)
 
     return filtered[:10]
@@ -221,8 +184,6 @@ def render_markdown(result: ScanResult) -> str:
     lines.extend(render_section(result.news, "No news items matched the current filters."))
     lines.extend(["", "## Events"])
     lines.extend(render_section(result.events, "No events matched the current filters."))
-    lines.extend(["", "## Sports events (next 30 days, DC + ~20 mile radius)"])
-    lines.extend(render_section(result.sports, "No sports events matched the current filters."))
     if result.errors:
         lines.extend(["", "## Source errors", *[f"- {error}" for error in result.errors]])
     return "\n".join(lines)
@@ -239,8 +200,6 @@ def render_section(items: list[Item], empty_message: str) -> list[str]:
             meta.append(item.published_at)
         if item.location:
             meta.append(item.location)
-        if item.price_text:
-            meta.append(item.price_text)
         if item.matched_terms:
             meta.append("matches: " + ", ".join(item.matched_terms[:5]))
         lines.append(f"  - {' | '.join(meta)}")
@@ -251,26 +210,9 @@ def render_section(items: list[Item], empty_message: str) -> list[str]:
 
 def to_json(result: ScanResult) -> str:
     return json.dumps(
-        {
-            "generated_at": result.generated_at,
-            "news": [asdict(item) for item in result.news],
-            "events": [asdict(item) for item in result.events],
-            "sports": [asdict(item) for item in result.sports],
-            "errors": result.errors,
-        },
+        {"generated_at": result.generated_at, "news": [asdict(item) for item in result.news], "events": [asdict(item) for item in result.events], "errors": result.errors},
         indent=2,
     )
-
-
-def extract_context(body: str, title: str, href: str) -> str:
-    patterns = [re.escape(title), re.escape(href)]
-    for pattern in patterns:
-        match = re.search(pattern, body, flags=re.IGNORECASE)
-        if match:
-            start = max(0, match.start() - 500)
-            end = min(len(body), match.end() + 500)
-            return body[start:end]
-    return body[:1200]
 
 
 def text_of(node: ET.Element | None) -> str:
@@ -298,10 +240,7 @@ def normalize_date(value: str | None) -> str | None:
 
 
 def extract_date(text: str) -> str | None:
-    for pattern in [
-        r"\b\d{4}-\d{2}-\d{2}\b",
-        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4}\b",
-    ]:
+    for pattern in [r"\b\d{4}-\d{2}-\d{2}\b", r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4}\b"]:
         match = re.search(pattern, text)
         if match:
             return normalize_date(match.group(0))
@@ -309,29 +248,8 @@ def extract_date(text: str) -> str | None:
 
 
 def extract_location(text: str) -> str | None:
-    patterns = [
-        r"([0-9]{1,5}[^|]{0,80}(?:NE|NW|SE|SW|Washington, DC))",
-        r"\b(Washington, DC|Washington DC|Arlington, VA|Alexandria, VA|Bethesda, MD|Silver Spring, MD|College Park, MD)\b",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return clean_space(match.group(1))
-    return None
-
-
-def extract_price(text: str) -> str | None:
-    patterns = [
-        r"(Starts? at\s*\$\d+(?:\.\d{2})?)",
-        r"(Tickets?\s+from\s*\$\d+(?:\.\d{2})?)",
-        r"(From\s*\$\d+(?:\.\d{2})?)",
-        r"(\$\d+(?:\.\d{2})?\s*(?:and up|starting price))",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            return clean_space(match.group(1))
-    return None
+    match = re.search(r"([0-9]{1,5}[^|]{0,80}(?:NE|NW|SE|SW|Washington, DC))", text)
+    return clean_space(match.group(1)) if match else None
 
 
 def parse_iso_datetime(value: str | None) -> datetime | None:
